@@ -1,0 +1,9 @@
+/venv
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.hcl
+**/tfplan
+**/.terraform/*
+.terraform.tfstate.lock.info
+variables.tf
