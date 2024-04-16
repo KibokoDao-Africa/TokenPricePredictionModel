@@ -2,19 +2,6 @@ provider "aws" {
   region = var.aws_region # fill in the AWS region
 }
 
-# create an S3 bucket
-resource "aws_s3_bucket" "bucket" {
-  bucket = var.bucket_name  # fill in the bucket name you want
-}
-
-# upload the model to the S3 bucket
-resource "aws_s3_object" "object" {
-  bucket = aws_s3_bucket.bucket.bucket
-  key    = "/TokenPricePredictionModel"
-  source = "./TokenPricePredictionModel"
-  acl    = "private"
-}
-
 # create an ECS task execution IAM role
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecs-task-execution-role"
@@ -47,7 +34,7 @@ resource "aws_ecs_cluster" "my_cluster" {
 }
 
 resource "aws_cloudwatch_log_group" "ecs_log_group" {
-  name = "/ecs/my-log-group"
+  name              = "/ecs/my-log-group"
   retention_in_days = 14
 }
 
@@ -63,20 +50,27 @@ resource "aws_ecs_task_definition" "ecs_task" {
   container_definitions = jsonencode([{
     name  = "tfserving_token_price_prediction"
     image = var.container_image # fill in your container image name and tag in ECR
-    portMappings = [{
-      containerPort = 8501
-      hostPort      = 8501
-      protocol      = "tcp"
-    }]
+    portMappings = [
+      {
+        containerPort = 8500
+        hostPort      = 8500
+        protocol      = "tcp" # gRPC
+      },
+      {
+        containerPort = 8501
+        hostPort      = 8501
+        protocol      = "tcp" # HTTP
+      }
+    ]
     environment = [{
-      name  = "MODEL_BASE_PATH"
-      value = "s3://${aws_s3_bucket.bucket.bucket}/TokenPricePredictionModel"
+      name  = "MODEL_NAME"
+      value = "TokenPricePredictionModel"
     }]
     logConfiguration = {
       logDriver = "awslogs"
       options = {
         awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
-        awslogs-region        = var.aws_region  # fill in the AWS region
+        awslogs-region        = var.aws_region # fill in the AWS region
         awslogs-stream-prefix = "ecs"
       }
     }
@@ -86,20 +80,11 @@ resource "aws_ecs_task_definition" "ecs_task" {
 # create an ECS service
 resource "aws_security_group" "ecs_tasks_sg" {
   name        = "ecs_tasks_sg"
-  description = "Allow all inbound traffic on HTTP/HTTPS"
+  description = "Allow all inbound traffic on the container ports and all outbound traffic"
 
-  # HTTP
   ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # HTTPS
-  ingress {
-    from_port   = 443
-    to_port     = 443
+    from_port   = 8500
+    to_port     = 8501
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -119,7 +104,7 @@ resource "aws_ecs_service" "my_service" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = var.subnets  # fill in your subnets' IDs as a list
+    subnets          = var.subnets # fill in your subnets' IDs as a list
     assign_public_ip = true
     security_groups  = [aws_security_group.ecs_tasks_sg.id]
   }

@@ -1,4 +1,5 @@
 /venv
+.ipynb_checkpoints
 *.tfstate
 *.tfstate.backup
 *.tfvars
